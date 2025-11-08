@@ -143,53 +143,44 @@
         // Load and display HRRR data
         async function loadData() {
             try {
-                // Load HRRR data
-                const response = await fetch('hrrr_data.json');
-                const data = await response.json();
-
                 // Load metadata
                 const metaResponse = await fetch('metadata.json');
                 const metadata = await metaResponse.json();
 
                 // Update info panel
-                document.getElementById('model').textContent = data.properties.model;
+                document.getElementById('model').textContent = metadata.model;
                 document.getElementById('forecast-time').textContent =
-                    new Date(data.properties.forecast_time).toLocaleString();
+                    new Date(metadata.forecast_time).toLocaleString();
                 document.getElementById('last-updated').textContent =
                     new Date(metadata.last_updated).toLocaleString();
-                document.getElementById('grid-points').textContent =
-                    data.features.length;
+                document.getElementById('grid-points').textContent = 'Image Overlay';
 
-                // Add data points to map
-                data.features.forEach(feature => {
-                    const refc = feature.properties.refc;
-                    const coords = feature.geometry.coordinates;
+                // Get bounds from metadata
+                const bounds = metadata.bounds;
 
-                    // Create circle marker for each point
-                    // coords[0] is longitude, coords[1] is latitude in GeoJSON
-                    // Leaflet expects [latitude, longitude]
-                    const circle = L.circleMarker([coords[1], coords[0]], {
-                        radius: 8,
-                        fillColor: getColor(refc),
-                        color: '#000',
-                        weight: 0.5,
-                        opacity: 0.5,
-                        fillOpacity: 0.8
-                    });
+                // Create image overlay with proper geographic bounds
+                // Leaflet imageOverlay expects: [[south, west], [north, east]]
+                const imageBounds = [
+                    [bounds.south, bounds.west],  // Southwest corner
+                    [bounds.north, bounds.east]   // Northeast corner
+                ];
 
-                    // Add popup with reflectivity info
-                    circle.bindPopup(`
-                        <strong>Composite Reflectivity:</strong> ${refc.toFixed(1)} dBZ<br>
-                        <strong>Location:</strong> ${coords[1].toFixed(2)}°N, ${Math.abs(coords[0]).toFixed(2)}°W
-                    `);
-
-                    circle.addTo(map);
+                // Add refc image overlay to map with perfect alignment
+                const imageOverlay = L.imageOverlay('refc_overlay.png', imageBounds, {
+                    opacity: 0.7,
+                    interactive: false
                 });
+
+                imageOverlay.addTo(map);
+
+                // Fit map to overlay bounds
+                map.fitBounds(imageBounds);
 
                 // Hide loading indicator
                 document.getElementById('loading').style.display = 'none';
 
-                console.log(`Loaded ${data.features.length} data points`);
+                console.log(`Loaded refc image overlay`);
+                console.log(`Bounds: [${bounds.south}, ${bounds.west}] to [${bounds.north}, ${bounds.east}]`);
 
             } catch (error) {
                 console.error('Error loading data:', error);

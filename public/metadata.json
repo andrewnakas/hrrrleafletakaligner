@@ -1,5 +1,5 @@
 {
-  "last_updated": "2025-11-08T23:01:36.625956",
+  "last_updated": "2025-11-08T23:14:25.323027",
   "forecast_time": "2025-11-08T22:00:00",
   "bounds": {
     "north": 71.5,
@@ -7,5 +7,7 @@
     "east": -130.0,
     "west": -179.0
   },
-  "grid_size": 30
+  "overlay_file": "refc_overlay.png",
+  "variable": "Composite Reflectivity (dBZ)",
+  "model": "HRRR-Alaska"
 }

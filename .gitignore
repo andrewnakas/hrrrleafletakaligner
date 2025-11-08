@@ -25,3 +25,7 @@ Thumbs.db
 # Data files (optional - uncomment if you don't want to commit generated data)
 # public/hrrr_data.json
 # public/metadata.json
+
+# GRIB2 files
+*.grib2
+*.grb2
