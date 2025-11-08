@@ -30,7 +30,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install numpy xarray cfgrib netCDF4 requests pygrib
+          pip install -r requirements.txt
 
       - name: Download and process HRRR data
         run: |
