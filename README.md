@@ -19,35 +19,54 @@ A real-time visualization of Alaska HRRR (High-Resolution Rapid Refresh) weather
 
 ## Setup
 
-### Enable GitHub Pages
+### 1. Enable GitHub Pages (Required for auto-deployment)
 
-1. Go to your repository Settings
-2. Navigate to Pages (in the left sidebar)
+1. Go to your repository **Settings** on GitHub
+2. Navigate to **Pages** (in the left sidebar)
 3. Under "Build and deployment":
-   - Source: GitHub Actions
+   - **Source**: Select **GitHub Actions**
 4. Save the settings
 
-### Branch Testing
+### 2. Set Up Main Branch (Optional)
 
-Push to any branch and the workflow will automatically:
-- Download the latest HRRR data
-- Process and align coordinates
-- Deploy to a branch-specific URL
-
-Each branch gets its own deployment, allowing you to test changes quickly.
-
-## Local Development
+If you want automatic Pages deployment, create a main branch:
 
 ```bash
-# Install dependencies
+git checkout -b main
+git push -u origin main
+```
+
+Then set it as the default branch in repository Settings > Branches.
+
+## Fast Testing Workflow
+
+The workflow runs on **every branch push** and provides two testing methods:
+
+### Method 1: Download Artifacts (Any Branch)
+
+1. Push to any branch: `git push`
+2. Go to Actions tab on GitHub
+3. Click on your workflow run
+4. Download the "hrrr-viewer-[branch-name]" artifact
+5. Extract and open `index.html` locally
+
+### Method 2: GitHub Pages (Main Branch Only)
+
+1. Push to main branch: `git push origin main`
+2. Wait ~1-2 minutes for deployment
+3. Visit: `https://[your-username].github.io/hrrrleafletakaligner/`
+
+### Method 3: Local Testing (Fastest)
+
+```bash
+# Quick start
+chmod +x test-local.sh
+./test-local.sh
+
+# Or manually:
 pip install -r requirements.txt
-
-# Run the data download script
 python scripts/download_hrrr.py
-
-# Serve the page locally
-cd public
-python -m http.server 8000
+cd public && python -m http.server 8000
 ```
 
 Then open http://localhost:8000 in your browser.
