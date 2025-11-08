@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Alaska HRRR Data Viewer</title>
+
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            max-width: 300px;
+        }
+
+        .info-panel h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .legend {
+            position: absolute;
+            bottom: 30px;
+            right: 10px;
+            z-index: 1000;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+
+        .legend-color {
+            width: 30px;
+            height: 15px;
+            margin-right: 10px;
+            border: 1px solid #ccc;
+        }
+
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 2000;
+            background: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">Loading HRRR data...</div>
+
+    <div id="map"></div>
+
+    <div class="info-panel">
+        <h3>Alaska HRRR Data</h3>
+        <div id="info-content">
+            <p><strong>Model:</strong> <span id="model">-</span></p>
+            <p><strong>Forecast Time:</strong> <span id="forecast-time">-</span></p>
+            <p><strong>Last Updated:</strong> <span id="last-updated">-</span></p>
+            <p><strong>Grid Points:</strong> <span id="grid-points">-</span></p>
+        </div>
+    </div>
+
+    <div class="legend">
+        <strong>Temperature (°F)</strong>
+        <div id="legend-items"></div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <script>
+        // Initialize map centered on Alaska
+        const map = L.map('map').setView([64.0, -152.0], 5);
+
+        // Add OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Color scale for temperature
+        function getColor(temp) {
+            return temp > 40 ? '#d73027' :
+                   temp > 30 ? '#fc8d59' :
+                   temp > 20 ? '#fee08b' :
+                   temp > 10 ? '#d9ef8b' :
+                   temp > 0  ? '#91bfdb' :
+                   temp > -10 ? '#4575b4' :
+                              '#313695';
+        }
+
+        // Create legend
+        function createLegend() {
+            const grades = [40, 30, 20, 10, 0, -10, -20];
+            const labels = [];
+            const legendItems = document.getElementById('legend-items');
+
+            grades.forEach((grade, i) => {
+                const from = grade;
+                const to = grades[i + 1];
+                const color = getColor(from);
+
+                const item = document.createElement('div');
+                item.className = 'legend-item';
+                item.innerHTML = `
+                    <div class="legend-color" style="background: ${color}"></div>
+                    <span>${from}${to ? '&ndash;' + to : '+'}</span>
+                `;
+                legendItems.appendChild(item);
+            });
+        }
+
+        // Load and display HRRR data
+        async function loadData() {
+            try {
+                // Load HRRR data
+                const response = await fetch('hrrr_data.json');
+                const data = await response.json();
+
+                // Load metadata
+                const metaResponse = await fetch('metadata.json');
+                const metadata = await metaResponse.json();
+
+                // Update info panel
+                document.getElementById('model').textContent = data.properties.model;
+                document.getElementById('forecast-time').textContent =
+                    new Date(data.properties.forecast_time).toLocaleString();
+                document.getElementById('last-updated').textContent =
+                    new Date(metadata.last_updated).toLocaleString();
+                document.getElementById('grid-points').textContent =
+                    data.features.length;
+
+                // Add data points to map
+                data.features.forEach(feature => {
+                    const temp = feature.properties.temperature;
+                    const coords = feature.geometry.coordinates;
+
+                    // Create circle marker for each point
+                    const circle = L.circleMarker([coords[1], coords[0]], {
+                        radius: 8,
+                        fillColor: getColor(temp),
+                        color: '#000',
+                        weight: 0.5,
+                        opacity: 0.5,
+                        fillOpacity: 0.7
+                    });
+
+                    // Add popup with temperature info
+                    circle.bindPopup(`
+                        <strong>Temperature:</strong> ${temp.toFixed(1)}°F<br>
+                        <strong>Location:</strong> ${coords[1].toFixed(2)}°N, ${coords[0].toFixed(2)}°W
+                    `);
+
+                    circle.addTo(map);
+                });
+
+                // Hide loading indicator
+                document.getElementById('loading').style.display = 'none';
+
+                console.log(`Loaded ${data.features.length} data points`);
+
+            } catch (error) {
+                console.error('Error loading data:', error);
+                document.getElementById('loading').textContent =
+                    'Error loading data. Please try again.';
+            }
+        }
+
+        // Initialize
+        createLegend();
+        loadData();
+    </script>
+</body>
+</html>
