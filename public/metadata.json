@@ -1,11 +1,11 @@
 {
-  "last_updated": "2025-11-08T23:14:25.323027",
+  "last_updated": "2025-11-08T23:47:31.351922",
   "forecast_time": "2025-11-08T22:00:00",
   "bounds": {
-    "north": 71.5,
-    "south": 51.0,
-    "east": -130.0,
-    "west": -179.0
+    "north": 52.61565330680793,
+    "south": 21.138123000000004,
+    "east": -60.91719277183779,
+    "west": -134.09547973426314
   },
   "overlay_file": "refc_overlay.png",
   "variable": "Composite Reflectivity (dBZ)",

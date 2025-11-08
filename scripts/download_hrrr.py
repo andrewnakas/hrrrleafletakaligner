@@ -44,86 +44,168 @@ def get_radar_colormap():
     return cmap, norm, bounds
 
 def download_hrrr_refc():
-    """Download latest Alaska HRRR refc data from NOAA."""
+    """Download latest Alaska HRRR refc data from NOAA using GRIB filter."""
 
     # Get current UTC time and round to latest forecast hour
     now = datetime.utcnow()
-    forecast_time = now - timedelta(hours=1)  # Get previous hour to ensure data availability
-    forecast_hour = forecast_time.replace(minute=0, second=0, microsecond=0)
 
-    date_str = forecast_hour.strftime('%Y%m%d')
-    hour_str = forecast_hour.strftime('%H')
+    # Try multiple recent forecast hours (HRRR data may not be immediately available)
+    for hours_back in range(0, 6):
+        forecast_time = now - timedelta(hours=hours_back)
+        forecast_hour = forecast_time.replace(minute=0, second=0, microsecond=0)
 
-    # HRRR Alaska refc URL
-    # Format: hrrr.YYYYMMDD/alaska/hrrr.tHHz.wrfsfcf00.grib2
-    url = f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.{date_str}/alaska/hrrr.t{hour_str}z.wrfsfcf00.grib2"
+        date_str = forecast_hour.strftime('%Y%m%d')
+        hour_str = forecast_hour.strftime('%H')
 
-    print(f"Attempting to download HRRR Alaska data from {url}")
+        # Try Alaska HRRR direct download (no filter available for Alaska domain)
+        # Alaska HRRR is a separate model with different file structure
+        # Try both possible file patterns
+        alaska_urls = [
+            f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.{date_str}/alaska/hrrr.t{hour_str}z.wrfsfcf00.ak.grib2",
+            f"https://nomads.ncep.noaa.gov/pub/data/nccf/com/hrrr/prod/hrrr.{date_str}/alaska/hrrr.t{hour_str}z.wrfsfcf00.grib2",
+        ]
 
-    try:
-        # Try to download the actual GRIB2 file
-        response = requests.get(url, timeout=30, stream=True)
+        print(f"Attempting to download HRRR Alaska refc for {forecast_hour.isoformat()}Z")
 
-        if response.status_code == 200:
-            # Save GRIB2 file
-            grib_path = 'public/hrrr_alaska.grib2'
-            os.makedirs('public', exist_ok=True)
-
-            with open(grib_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=8192):
-                    f.write(chunk)
-
-            print(f"Downloaded GRIB2 file successfully")
-
-            # Try to process with cfgrib
+        for url in alaska_urls:
+            print(f"Trying URL: {url}")
             try:
-                import xarray as xr
-                import cfgrib
-
-                # Open GRIB2 file and extract refc
-                ds = xr.open_dataset(grib_path, engine='cfgrib',
-                                     backend_kwargs={'filter_by_keys': {'typeOfLevel': 'atmosphereSingleLayer'}})
-
-                if 'refc' in ds:
-                    create_refc_image(ds, forecast_hour)
-                    return
-                else:
-                    print("refc field not found in GRIB2 file, trying alternative...")
-
+                response = requests.head(url, timeout=10)
+                if response.status_code == 200:
+                    print(f"Found file at {url}")
+                    base_url = url
+                    params = {}
+                    break
             except Exception as e:
-                print(f"Error processing GRIB2: {e}")
-                print("Falling back to synthetic data")
+                continue
         else:
-            print(f"Failed to download GRIB2 (status {response.status_code})")
+            print("Alaska HRRR files not found, trying CONUS fallback")
+            base_url = "https://nomads.ncep.noaa.gov/cgi-bin/filter_hrrr_2d.pl"
+            params = {
+                'file': f'hrrr.t{hour_str}z.wrfsfcf00.grib2',
+                'var_REFC': 'on',
+                'lev_entire_atmosphere': 'on',
+                'dir': f'/hrrr.{date_str}/conus'
+            }
+
+        print(f"Final URL: {base_url}")
+        if params:
+            print(f"Params: {params}")
+
+        try:
+            if params:
+                response = requests.get(base_url, params=params, timeout=120)
+            else:
+                response = requests.get(base_url, timeout=120)
+
+            if response.status_code == 200 and len(response.content) > 1000:
+                # Save GRIB2 file
+                grib_path = 'public/hrrr_alaska_refc.grib2'
+                os.makedirs('public', exist_ok=True)
+
+                with open(grib_path, 'wb') as f:
+                    f.write(response.content)
+
+                print(f"Downloaded GRIB2 file successfully ({len(response.content)} bytes)")
+
+                # Try to process with cfgrib
+                if process_grib_refc(grib_path, forecast_hour):
+                    return True
+
+            else:
+                print(f"Failed to download (status {response.status_code}, size {len(response.content)} bytes)")
+
+        except Exception as e:
+            print(f"Error downloading HRRR data for {forecast_hour}: {e}")
+            continue
+
+    # If all attempts failed, use synthetic data
+    print("All download attempts failed. Using synthetic data for demo")
+    forecast_hour = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    create_synthetic_refc_image(forecast_hour)
+    return False
+
+def process_grib_refc(grib_path, forecast_time):
+    """Process GRIB2 file to extract refc and create image overlay."""
+    try:
+        import xarray as xr
+        import cfgrib
+
+        print("Processing GRIB2 file with cfgrib...")
+
+        # Open GRIB2 file
+        ds = xr.open_dataset(grib_path, engine='cfgrib')
+
+        print(f"Available variables: {list(ds.data_vars)}")
+        print(f"Coordinates: {list(ds.coords)}")
+
+        # Try to find refc variable (it might have different names)
+        refc_var = None
+        for var_name in ['refc', 'REFC', 'unknown', 'r']:
+            if var_name in ds:
+                refc_var = var_name
+                break
+
+        if refc_var is None:
+            print("Could not find refc variable in GRIB2 file")
+            print(f"Available variables: {list(ds.data_vars)}")
+            return False
+
+        print(f"Found refc variable: {refc_var}")
+
+        # Extract refc data
+        refc = ds[refc_var].values
+
+        # Get coordinates
+        if 'latitude' in ds.coords and 'longitude' in ds.coords:
+            lats = ds['latitude'].values
+            lons = ds['longitude'].values
+        elif 'lat' in ds.coords and 'lon' in ds.coords:
+            lats = ds['lat'].values
+            lons = ds['lon'].values
+        else:
+            print("Could not find latitude/longitude coordinates")
+            return False
+
+        # Convert longitude from 0-360 to -180 to 180 if needed
+        if lons.max() > 180:
+            lons = np.where(lons > 180, lons - 360, lons)
+
+        print(f"Data shape: {refc.shape}")
+        print(f"Lat range: {lats.min():.2f} to {lats.max():.2f}")
+        print(f"Lon range: {lons.min():.2f} to {lons.max():.2f}")
+        print(f"Refc range: {np.nanmin(refc):.2f} to {np.nanmax(refc):.2f} dBZ")
+
+        # Get bounds
+        lat_min, lat_max = float(np.nanmin(lats)), float(np.nanmax(lats))
+        lon_min, lon_max = float(np.nanmin(lons)), float(np.nanmax(lons))
+
+        # Create image with radar colormap
+        create_refc_image_from_data(refc, lat_min, lat_max, lon_min, lon_max, forecast_time)
+
+        ds.close()
+        return True
 
     except Exception as e:
-        print(f"Error downloading HRRR data: {e}")
+        print(f"Error processing GRIB2: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
-    # Fallback to synthetic data
-    print("Using synthetic data for demo")
-    create_synthetic_refc_image(forecast_hour)
-
-def create_refc_image(ds, forecast_time):
-    """Create image overlay from actual HRRR refc data."""
-    refc = ds['refc'].values
-    lats = ds['latitude'].values
-    lons = ds['longitude'].values
-
-    # Get bounds
-    lat_min, lat_max = np.nanmin(lats), np.nanmax(lats)
-    lon_min, lon_max = np.nanmin(lons), np.nanmax(lons)
-
-    # Create image with radar colormap
-    cmap, norm, bounds = get_radar_colormap()
+def create_refc_image_from_data(refc, lat_min, lat_max, lon_min, lon_max, forecast_time):
+    """Create image overlay from refc data array."""
 
     # Mask out low values (< 5 dBZ)
     refc_masked = np.ma.masked_where(refc < 5, refc)
 
-    # Create image
-    fig, ax = plt.subplots(figsize=(10, 10), dpi=150)
+    # Create image with radar colormap
+    cmap, norm, bounds = get_radar_colormap()
+
+    fig, ax = plt.subplots(figsize=(12, 10), dpi=150)
     ax.set_position([0, 0, 1, 1])
     ax.axis('off')
 
+    # Plot with extent matching geographic bounds
     im = ax.imshow(refc_masked, cmap=cmap, norm=norm,
                    origin='lower', interpolation='nearest',
                    extent=[lon_min, lon_max, lat_min, lat_max])
@@ -138,6 +220,8 @@ def create_refc_image(ds, forecast_time):
     save_metadata(forecast_time, lat_min, lat_max, lon_min, lon_max)
 
     print(f"Created refc image overlay from actual HRRR data")
+    print(f"Image saved to public/refc_overlay.png")
+    print(f"Bounds: [{lat_min:.2f}, {lat_max:.2f}] x [{lon_min:.2f}, {lon_max:.2f}]")
 
 def create_synthetic_refc_image(forecast_time):
     """Create synthetic refc data as image overlay for demo."""
