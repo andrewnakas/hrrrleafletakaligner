@@ -49,23 +49,44 @@ def create_synthetic_alaska_data(forecast_time):
     # Create meshgrid
     lon_grid, lat_grid = np.meshgrid(lons, lats)
 
-    # Generate synthetic temperature data (in Fahrenheit)
-    # Create a temperature gradient from south (warmer) to north (colder)
-    base_temp = 30
-    temp_data = base_temp - (lat_grid - lat_min) / (lat_max - lat_min) * 50
+    # Generate synthetic composite reflectivity data (in dBZ)
+    # Create realistic radar reflectivity patterns
+    # REFC values typically range from -10 to 75+ dBZ
+    # Higher values indicate more intense precipitation
 
-    # Add some variability
-    temp_data += np.random.normal(0, 3, temp_data.shape)
+    # Create base pattern with some precipitation areas
+    refc_data = np.random.normal(15, 10, (grid_size, grid_size))
+
+    # Add localized storm cells (higher reflectivity areas)
+    num_cells = 5
+    for _ in range(num_cells):
+        center_i = np.random.randint(5, grid_size - 5)
+        center_j = np.random.randint(5, grid_size - 5)
+        intensity = np.random.uniform(40, 65)  # Storm cell intensity
+
+        for i in range(grid_size):
+            for j in range(grid_size):
+                dist = np.sqrt((i - center_i)**2 + (j - center_j)**2)
+                if dist < 5:
+                    refc_data[i, j] = max(refc_data[i, j], intensity * np.exp(-dist/3))
+
+    # Clip values to realistic range and set areas with no precipitation to NaN
+    refc_data = np.clip(refc_data, -10, 75)
+    refc_data[refc_data < 5] = np.nan  # No significant reflectivity below 5 dBZ
 
     # Create GeoJSON features for contour/heatmap
     features = []
 
     for i in range(grid_size):
         for j in range(grid_size):
+            # Skip points with no significant reflectivity
+            if np.isnan(refc_data[i, j]):
+                continue
+
             feature = {
                 "type": "Feature",
                 "properties": {
-                    "temperature": float(temp_data[i, j]),
+                    "refc": float(refc_data[i, j]),
                     "lat": float(lat_grid[i, j]),
                     "lon": float(lon_grid[i, j])
                 },
@@ -81,7 +102,7 @@ def create_synthetic_alaska_data(forecast_time):
         "properties": {
             "forecast_time": forecast_time.isoformat(),
             "model": "HRRR-Alaska",
-            "variable": "Temperature (°F)",
+            "variable": "Composite Reflectivity (dBZ)",
             "grid_size": grid_size
         },
         "features": features
